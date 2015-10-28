@@ -19,16 +19,16 @@ class SessionStore(SessionBase):
     """
 
     def __init__(self, session_key=None):
-        self._servers = self.server.split(',')
-        host_port_list = []
-        for server in self._servers:
-            if ':' in server:
-                host, port = server.rsplit(':', 1)
-                try:
-                    port = int(port)
-                    host_port_list.append((host, port))
-                except (ValueError, TypeError):
-                    raise ImproperlyConfigured("port value must be an integer")
+        # self._servers = self.server.split(',') if type(self.server)==str else self.server
+        host_port_list = self.server
+        # for server in self._servers:
+        #     if ':' in server:
+        #         host, port = server.rsplit(':', 1)
+        #         try:
+        #             port = int(port)
+        #             host_port_list.append((host, port))
+        #         except (ValueError, TypeError):
+        #             raise ImproperlyConfigured("port value must be an integer")
 
         if not host_port_list:
             host, port = None, None
@@ -40,9 +40,9 @@ class SessionStore(SessionBase):
           }
         self._client = aerospike.client(config)
         if self.username is None and self.password is None:
-            self._client.connect()
+            self.conn = self._client.connect()
         else:
-            self._client.connect(self.username, self.password)
+            self.conn = self._client.connect(self.username, self.password)
         super(SessionStore, self).__init__(session_key)
 
     @property
@@ -89,7 +89,7 @@ class SessionStore(SessionBase):
 
     def load(self):
         try:
-            key, meta, session_data = self._client.get(
+            key, meta, session_data = self.conn.get(
                 self.get_aerospike_tuple(self._get_or_create_session_key())
             )
             return self.decode(force_unicode(session_data.get('session_key','')))
@@ -99,7 +99,7 @@ class SessionStore(SessionBase):
 
     def exists(self, session_key):
         try:
-            (key, meta) = self._client.exists(self.get_aerospike_tuple(session_key))
+            (key, meta) = self.conn.exists(self.get_aerospike_tuple(session_key))
             return meta != None
         except Exception,e:
             return False
@@ -118,12 +118,12 @@ class SessionStore(SessionBase):
     def save(self, must_create=False):
         if self.session_key is None:
             return self.create()
-        key, meta = self._client.exists(self.get_aerospike_tuple(self._get_or_create_session_key()))
+        key, meta = self.conn.exists(self.get_aerospike_tuple(self._get_or_create_session_key()))
         if must_create and meta != None:
             raise CreateError
         data = {self.aero_bin : self.encode(self._get_session(no_load=must_create))}
         ttl = self.get_expiry_age() or  self.meta['ttl']
-        self._client.put(key, data, meta = {'ttl': ttl})
+        self.conn.put(key, data, meta = {'ttl': ttl})
 
     def delete(self, session_key=None):
         if session_key is None:
@@ -131,7 +131,7 @@ class SessionStore(SessionBase):
                 return
             session_key = self.session_key
         try:
-            self._client.remove(self.get_aerospike_tuple(session_key))
+            self.conn.remove(self.get_aerospike_tuple(session_key))
         except:
             pass
 
